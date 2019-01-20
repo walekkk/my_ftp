@@ -151,6 +151,7 @@ private:
         }
         return p_envs;
     }
+
 public:
     CScanFile(Client* client):
         _client(client),
