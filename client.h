@@ -184,27 +184,208 @@ public:
 
 };
 
+class CTransFile
+{
+    //这个模块用于文件传输
+    //利用套接字将文件名队列中的文件传输到服务器
+private:
+    Client* _client;
+    TcpSocket _socket;      //tcp套接字
+    int _cur_statu;         //当前客户端状态
+    int _file_fd;           //当前操作文件的文件描述符
+    uint64_t _total_size;   //文件大小
+    string _username;       //用户名
+    string _passward;       //密码
+    char* _root_dir;        //监控的路径
+    
+    bool StopCurFile
+    {
+        //停止传输文件
+        if(_file_fd != -1)
+        {
+            close(_file_fd);
+        }
+        _file_fd = -1;
+        _total_size = 0;
+        _cur_statu = N_SNDHDR;
+    }
+    bool CommonReq(_req_type_t req_type,uint64_t len)
+    {
+        //状态同步：每一次进行登陆操作的时候同步状态
+        //例如客户端是登陆验证状态的时候，
+        //这个模块用send要保证对端是登陆接收状态
+        CommonReq req(req_type,len);
+        if(_socket.Send((void*)&req,sizeof(CommonReq))<0)
+        {
+            printf("send com req error\n");
+            return false;
+        }
+        return true;
+    }
+    bool LoginReq()
+    {
+        //登陆的request，向服务器发送一个登陆请求
+        CHECK_RET(CommonReq(REQ_LOGIN,sizeof(LoginInfo)));
+        LoginInfo user(_username,_passward);
+        if(_socket.Send((void*)&user,sizeof(LoginInfo))<0)
+        {
+            printf("send user info error!\n");
+            return false;
+        }
+        //接收该登陆返回
+        _cur_statu = N_RCVLOGIN;
+        return true;
+    }
+    bool LoginRsp()
+    {
+        CommonReq rsp;
+        if(_socket.Recv((void*)&rsp,sizeof(CommonReq))<0)
+        {
+            printf("rvcv login rsp error\n");
+            return false;
+        }
+        if(!rsp.IsLoginRsp())
+        {
+            printf("not login rsp close!\n");
+            return false;
+        }
+        if(rsp.GetLen() != 0)
+        {
+            char buff[1024] = {0};
+            CHECK_ERR(_socket.Recv(Buff,rsp.GetLen()));
+            printf("login faild:%s\n",buff);
+            return false;
+        }
+        //接收到登陆的回复后开始传输文件协议（文件名和大小）
+        _cur_statu = N_SNDHDR;
+        return true;
+    }
+    bool SendFileHdr(string& file)
+    {
+        struct stat st;
+        if(stat(file.c_str(),&st) < 0)
+        {
+            printf("get file stat error\n");
+            return false;
+        }
+        CHECK_RET(CommonReq(REQ_UFILE,sizeof(FileInfo)));
+        //传递去掉了rootdir之后的文件名
+        string sflie(file,strlen(_root_dir));
+        FileInfo freq(sfile,st.st_size);
+        printf("send file name:%s len:%lu\n",freq.GetName(),Freq.GetLen());
+        if(_socket.Send((void*)&freq,sizeof(FileInfo)) < 0)
+        {
+            printf("send file hdr error\n");
+            return false;
+        }
+        if((_file_fd = open(file.c_str(),O_RDONLY))<0)
+        {
+            printf("open file %s error\n",file.c_str());
+            return false;
+        }
+        _total_size = st.st_size;
+        _cur_statu = N_SNDBODY;
+        return true;
+    }
+    bool SendFileBody()
+    {
+        int slen = 0;
+        int alen = 0;
+        char buff[1024];
+        while(alen < _total_size)
+        {
+            slen = read(_file_fd,buff,1024);
+            CHECK_RET(_socket.Send(buff,slen));
+            alen+=slen;
+        }
+        _cur_statu = N_SNDOVER;
+        return true;
+    }
+    bool SendFileOver()
+    {
+        close(_file_fd);
+        _file_fd = -1;
+        _total_size = 0;
+        //文件发送完毕，准备发送下一个文件
+        _cur_statu = N_SNDHDR;
+        //接受回复消息
+        CommonReq rsp;
+        CHECK_ERR(_socket.Recv((void*)&rsp,sizeof(CommonReq)));
+        if(!rsp.IsUpLodeRsp())
+        {
+            printf("not file rsp\n");
+            return false;
+        }
+        if(rsp.GetLen()!= 0)
+        {
+            char buff[1024] = {0};
+            CHECK_ERR(socket.Recv(buff,rsp.GetLen()));
+            prinf("send file failed:%s\n"buff);
+            return true;
+        }
+        printf("file trans success!\n");
+        return true;
+    }
+public:CTransFile(Client* client):
+       _client(client),
+       _total_size(0),
+       _file_fd(-1),
+       _cur_statu(N_START)
+    {
+        _root_dir = client -> GetRootDir();
+        _username = client -> GetUserName();
+        _passward = "111111";
+    }
+     bool Start()
+    {
+        string ip = _client -> GetStrAddr();
+        uint16_t port = atoi(_client->GetStrPort());
+        CHECK_RET(_socket.Socket());
+        CHECK_RET(_socket.Connect(ip,port));
+        while(1)
+        {       
+            switch(_cur_statu)
+            {
+                case N_START:
+                    CHECK_RET(LoginReq());
+                    break;
+                case N_RCVLOGIN:
+                    CHECK_RET(LoginRsp());
+                    break;
+                case N_SNDHDR:
+                    string* file;
+                    if(_client->QueuePopDate((void*)&file))
+                    {
+                        if(!SendFileHdr(*file))
+                        {
+                            printf("send file hdr error\n");
+                            StopCurFile();
+                        }
+                        delete file;
+                    }
+                    break;
+                case N_SNDBODY:
+                    if(!SendFileBody())
+                    {
+                        printf("send file body error\n");
+                        StopCurFile();
+                    }
+                    break;
+                case N_SNDOVER:
+                    if(!SendFileOver())
+                    {
+                        printf("recv file rsp error\n");
+                        StopCurFile();
+                    }
+                    break;
+                defaule:
+                    printf("error status:%d\n",_cur_statu);
+                    return false;
+            }   
+        }
+        _socket.Close();
+        return true;
+    }
+};
 
 #endif
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
