@@ -1,39 +1,48 @@
 #include"main.h"
 #include"client.h"
 #include"server.h"
+#include"ThreadPool.h"
 #include<pthread>
 
-void* LoginServer(void* arg)
+void* LoginListen(void* arg)
 {
+    //登陆服务
     LoginServer server((Server*)arg);
     server.Start();
     return nullptr;
 }
 void* TransListen(void* arg)
 {
+    //传输服务
     TransServer server((Server*)arg);
     server.Start();
     return nullptr;
 }
+void* ThreadHandler(InitParam* init)
+{
+    Server _server(init->GetRootDir(),init->GetStrAddr(),GetStrPort());
+    LoginListen(&_server);
+    TransListen(&_server);
+}
 bool RunServer(InitParam* init)
 {
-    //这里可以优化成线程池，后面在做优化
-    pthread_t tid_l,tid_t;
-    Server server(init->GetRootDir(),init->>GetStrAddr(),init->GetStrPort());
-    pthread_create(&tid_l,NULL,LoginListen,(void*)&server);
-    pthread_create(&tid_t,NULL,TransListen,(void*)&server);
-    pthread_join(tid_l,NULL);
-    pthread_join(tid_t,NULL);
+    ThreadPool* tp;
+    tp->InitThreadPool();
+    Task t;
+    t.SetTask(init,ThreadHandler);
+    tp.PushTask(t);
     return true;
 }
 void* ScansFile(void* arg)
 {
+    //监听服务
     CScanFile scanfile((Client*)arg);
     scanfile.Start();
     return NULL;
 }
 void* TransFile(void* arg)
 {
+    //传输服务
     CTransFile((Client*)arg);
     transfile.Start();
     return NULL;

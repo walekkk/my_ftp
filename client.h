@@ -7,6 +7,7 @@
 #include"common.h"
 
 typedef struct inotify_event InotifyEvent;
+
 using namespace std;
 
 class Client
@@ -69,6 +70,7 @@ private:
     
     bool InitInotify()
     {
+        //inotify的初始化
         _inotify_fd=inotify_init();
         CHECK_ERR(_inotify_fd);
         return true;
@@ -97,10 +99,13 @@ private:
         {
             return false;
         }
+        *it = path->second;
         return true;
     }
     bool GetFullFile(InotifyEvent* evs,string* file)
     {
+        //已经提取到一个监控到的文件信息
+        //根据这个文件信息找出文件名
         CHECK_RET(evs);
         string path;
         CHECK_RET(GetListenDir(evs->wd,&path));
@@ -161,6 +166,7 @@ public:
     {}
     bool Start()
     {
+        //初始化inotify并添加监控目录
         string root = _client -> GetRootDir();
         CHECK_RET(InitInotify());
         CHECK_RET(AddListenDir(root));
@@ -168,6 +174,7 @@ public:
         {
             if(CheckEvent())
             {
+                //如果发生文件触发条件，就将文件名加入队列
                 string* file = new string();
                 if(GetFullFile(NextEvent(),file))
                 {
@@ -175,6 +182,8 @@ public:
                 }
             }
         }
+        //对文件监控完成
+        log(INFO,"scanfile success!");
         return true;
     }
     ~CScanFile()
@@ -217,7 +226,7 @@ private:
         CommonReq req(req_type,len);
         if(_socket.Send((void*)&req,sizeof(CommonReq))<0)
         {
-            printf("send com req error\n");
+            log(ERROR,"send com req error\n");
             return false;
         }
         return true;
@@ -229,10 +238,11 @@ private:
         LoginInfo user(_username,_passward);
         if(_socket.Send((void*)&user,sizeof(LoginInfo))<0)
         {
-            printf("send user info error!\n");
+            log(ERROR,"send user info error!");
             return false;
         }
         //接收该登陆返回
+        //客户端状态改变
         _cur_statu = N_RCVLOGIN;
         return true;
     }
@@ -241,19 +251,25 @@ private:
         CommonReq rsp;
         if(_socket.Recv((void*)&rsp,sizeof(CommonReq))<0)
         {
-            printf("rvcv login rsp error\n");
+            //接收错误
+            log(ERROR,"rvcv login rsp error");
             return false;
         }
         if(!rsp.IsLoginRsp())
         {
-            printf("not login rsp close!\n");
+            log(ERROR,"not login rsp close!");
             return false;
         }
         if(rsp.GetLen() != 0)
         {
             char buff[1024] = {0};
-            CHECK_ERR(_socket.Recv(Buff,rsp.GetLen()));
-            printf("login faild:%s\n",buff);
+            CHECK_ERR(_socket.Recv(buff,rsp.GetLen()));
+            string _errmsg = "login faild : ";
+            for(int i=0;i<strlen(buff);i++)
+            {
+                _errmsg += strlen[i];
+            }
+            log(ERROR,_errmag);
             return false;
         }
         //接收到登陆的回复后开始传输文件协议（文件名和大小）
@@ -262,10 +278,11 @@ private:
     }
     bool SendFileHdr(string& file)
     {
+        //发送协议头
         struct stat st;
         if(stat(file.c_str(),&st) < 0)
         {
-            printf("get file stat error\n");
+            log(ERROR,"get file stat error");
             return false;
         }
         CHECK_RET(CommonReq(REQ_UFILE,sizeof(FileInfo)));
@@ -275,7 +292,7 @@ private:
         printf("send file name:%s len:%lu\n",freq.GetName(),Freq.GetLen());
         if(_socket.Send((void*)&freq,sizeof(FileInfo)) < 0)
         {
-            printf("send file hdr error\n");
+            log(ERROR"send file hdr error");
             return false;
         }
         if((_file_fd = open(file.c_str(),O_RDONLY))<0)
@@ -313,7 +330,7 @@ private:
         CHECK_ERR(_socket.Recv((void*)&rsp,sizeof(CommonReq)));
         if(!rsp.IsUpLodeRsp())
         {
-            printf("not file rsp\n");
+            log(INFO,"not file rsp");
             return false;
         }
         if(rsp.GetLen()!= 0)
@@ -323,10 +340,11 @@ private:
             prinf("send file failed:%s\n"buff);
             return true;
         }
-        printf("file trans success!\n");
+        log(INFO,"file trans success!");
         return true;
     }
-public:CTransFile(Client* client):
+public:
+    CTransFile(Client* client):
        _client(client),
        _total_size(0),
        _file_fd(-1),
@@ -358,7 +376,7 @@ public:CTransFile(Client* client):
                     {
                         if(!SendFileHdr(*file))
                         {
-                            printf("send file hdr error\n");
+                            log(ERROR,"send file hdr error");
                             StopCurFile();
                         }
                         delete file;
@@ -367,14 +385,14 @@ public:CTransFile(Client* client):
                 case N_SNDBODY:
                     if(!SendFileBody())
                     {
-                        printf("send file body error\n");
+                        log(ERROR,"send file body error");
                         StopCurFile();
                     }
                     break;
                 case N_SNDOVER:
                     if(!SendFileOver())
                     {
-                        printf("recv file rsp error\n");
+                        log(ERROR,"recv file rsp error");
                         StopCurFile();
                     }
                     break;
@@ -383,6 +401,7 @@ public:CTransFile(Client* client):
                     return false;
             }   
         }
+        log(INFO,"trans file success!");
         _socket.Close();
         return true;
     }

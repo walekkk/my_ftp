@@ -10,6 +10,7 @@
 #include<unistd.h>
 #include<stdint.h>
 #include<string.h>
+#include"log.h"
 #include<sys/socket.h>
 #include<netinet/in.h>
 #include<netinet/tcp.h>
@@ -262,12 +263,12 @@ public:
             {
                 return 0;
             }
-            perror("recv error");
+            log(ERROR,"recv error");
             return -1;
         }
         else if(rlen == 0)
         {
-            printf("peer shutdown\n");
+            log(ERROR,"peer shutdown");
             return -1;
         }
         return rlen;
@@ -285,7 +286,7 @@ public:
                 {
                     continue;
                 }
-                perror("send error");
+                log(ERROR,"send error");
                 return false;
             }
             alen += slen;

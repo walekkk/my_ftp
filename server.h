@@ -57,7 +57,7 @@ class ClientInfo
 {
 //登陆验证模块，以及接受客户端文件的主体模块
 private:
-    int _cur_statu;     //客户端状态
+    int _cur_statu;     //服务器状态
     int _file_fd;       //当前操作文件的描述符
     uint64_t _cur_size; //文件总大小
     LoginInfo _user;    //用户信息
@@ -131,34 +131,34 @@ public:
         //同步状态
         if(_sock.Recv(&req,sizeof(CommReq)) < 0)
         {
-            printf("recv com req error\n");
+            log(ERROR,"recv com req error");
             return false;
         }
-        printf("recv com req\n");
+        log(INFO,"recv com req");
         //改变当前状态，改为接受状态 
         if(!req.IsLoginReq())
         {
-            printf("not login req,close\n");
+            log(ERROR,"not login req,close");
             return false;
         }
         //接收登陆信息
         if(_sock.Recv(&_user,sizeof(LoginInfo)) < 0)
         {
-            printf("recv user info error\n");
+            log(ERROR,"recv user info error");
             return false;
         }
         printf("new user login:[%s]\n",_user.GetName());
         //为将要接收的文件创建目录
         if(!CreateDir())
         {
-            printf("create client dir error\n");
+            log(ERROR,"create client dir error");
             return false;
         }
         commReq rsp(RSP_LOGIN,0);
         //发送接收响应
         if(!_sock.Send((void*)&rsp,sizeof(CommReq)));
         {
-            printf("send login rsp error\n");
+            log(ERROR,"send login rsp errcor");
             return false;
         }
         _cur_statu = N_RCVHDR;
@@ -170,19 +170,19 @@ public:
         //建立验证连接
         if(_sock.Recv(&req,sizeof(CommReq)) < 0)
         {
-            printf("recv com req error\n");
+            log(ERROR,"recv com req error");
             return false;
         }
         //改变当前状态，改为接收协议状态
         if(!req.IsUpLoadReq())
         {
-            printf("not up load req ,close\n");
+            lopg(ERROR,"not up load req ,close");
             return false;
         }
         //接收头部信息并且存放在_file里
         if(_sock.Recv(&_file,sizeof(FileInfo)) < 0)
         {
-            printf("recv file info error\n");
+            log(ERROR,"recv file info error");
             return false;
         }
         printf("client upload filr:%s\n",_file.GetName());
@@ -350,7 +350,7 @@ public:
                         {
                             if(*it == _list[i])
                             {
-                                printf("login faild delete client\n");
+                                log(ERROR,"login faild delete client");
                                 _nlogin_cli.erase(it);
                             }
                          }
@@ -364,12 +364,12 @@ public:
                         {
                             if(*it == _list[i])
                             {
-                                printf("delete client from no login vector!!\n");
+                                log(ERROR,"delete client from no login vector!!");
                                 _nlogin_cli.erase(it);
                             }
                         }
                         //将客户端信息添加到队列，传输线程获取后开始传输文件
-                        printf("insert client to trans thread\n");
+                        log(INFO,"insert client to trans thread");
                         _server->QueuePushData((void*)_list[i]);
                     }
                  }
@@ -398,7 +398,7 @@ public:
                 ClientInfo* client;
                 _server->QueuePopData(void**)&client;
                 _epoll.Add(client);
-                printf("new client start treans\n");
+                log(INFO,"new client start treans");
             }
             vector<ClientInfo*> _trans_cli;
             if(!epoll.Wait(&_trans_cli))
@@ -415,7 +415,7 @@ public:
                     {
                         if(*it == _trans_cli[i])
                         {
-                            printf("trans file failed delete client\n");
+                            log(INFO,"trans file failed delete client");
                             delete _trans_cli[i];
                             _trans_cli.erase(it);
                         }

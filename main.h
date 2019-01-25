@@ -80,19 +80,19 @@ private:
         }
         if(!_root_dir)
         {
-            printf("have not listen root dir");
+            log(ERROR,"have not listen root dir");
             return false;
         }
         if(!_str_addr||!_str_port)
         {
-            printf("have not port or addr\n");
+            log(ERROR,"have not port or addr");
             return false;
         }
         if(_run_type == 2)
         {
             if(!_user_name)
             {
-                printf("client should have username\n");
+                log(ERROR,"client should have username");
                 return false;
             }
         }
